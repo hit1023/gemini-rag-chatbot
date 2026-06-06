@@ -176,21 +176,39 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
 ユーザー: {req.message}
 """
     try:
-        response = chat_client.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
-        answer = response.text
+        from google.genai import types
+        response = chat_client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                thinking_config=types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinking_budget=3000,
+                )
+            ),
+        )
+        # 思考内容と回答を分離
+        thinking = ""
+        answer = ""
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, "thought") and part.thought:
+                thinking += part.text
+            else:
+                answer += part.text
     except Exception as e:
         err = str(e)
+        thinking = ""
         if "429" in err:
             answer = "ごめんね、今ちょっと混んでて返事できないんだ。少し待ってからもう一度話しかけてね。(ERR429)"
         elif "503" in err or "UNAVAILABLE" in err:
             answer = "ごめんね、今サービスが不安定みたい。少し待ってからもう一度試してね。(ERR503)"
         else:
-            answer = f"ごめんね、うまく返事できなかったよ。もう一度試してみて。(ERR000)"
+            answer = "ごめんね、うまく返事できなかったよ。もう一度試してみて。(ERR000)"
 
     save_message(session_id, user_id, "user", req.message)
     save_message(session_id, user_id, "assistant", answer)
 
-    return {"answer": answer, "contexts": contexts, "session_id": session_id}
+    return {"answer": answer, "thinking": thinking, "contexts": contexts, "session_id": session_id}
 
 
 # ===== ファイルアップロード =====

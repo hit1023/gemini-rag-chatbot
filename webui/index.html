@@ -168,6 +168,32 @@
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ===== Thinkingステータスバー ===== */
+    #thinking-bar {
+      display: none;
+      border-top: 1px solid var(--border);
+      background: linear-gradient(135deg, #1a1d27 0%, #1e2235 100%);
+      padding: 8px 20px;
+      overflow: hidden;
+    }
+    #thinking-bar.visible { display: block; }
+    .thinking-label {
+      font-size: 10px; color: var(--accent); text-transform: uppercase;
+      letter-spacing: 0.1em; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;
+    }
+    .thinking-dot {
+      width: 6px; height: 6px; background: var(--accent); border-radius: 50%;
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+    #thinking-text {
+      font-size: 12px; color: var(--text-muted); line-height: 1.5;
+      max-height: 60px; overflow: hidden;
+      mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+      white-space: pre-wrap; word-break: break-all;
+    }
   </style>
 </head>
 <body>
@@ -241,6 +267,10 @@
   <div class="main">
     <header id="chat-header">会話</header>
     <div id="chat-window"></div>
+    <div id="thinking-bar">
+      <div class="thinking-label"><div class="thinking-dot"></div>Thinking...</div>
+      <div id="thinking-text"></div>
+    </div>
     <div class="input-bar">
       <textarea id="msg-input" placeholder="メッセージを入力…" rows="1"></textarea>
       <button id="send-btn">送信</button>
@@ -356,6 +386,20 @@
     return wrap;
   }
 
+  const thinkingBar = document.getElementById("thinking-bar");
+  const thinkingText = document.getElementById("thinking-text");
+
+  function showThinkingBar(text) {
+    thinkingText.textContent = text || "考え中...";
+    thinkingBar.classList.add("visible");
+    thinkingBar.scrollTop = thinkingBar.scrollHeight;
+  }
+
+  function hideThinkingBar() {
+    thinkingBar.classList.remove("visible");
+    thinkingText.textContent = "";
+  }
+
   async function sendMessage() {
     const msg = msgInput.value.trim();
     if (!msg) return;
@@ -364,6 +408,7 @@
     msgInput.style.height = "48px";
     sendBtn.disabled = true;
     const typing = showTyping();
+    showThinkingBar("考え中...");
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -375,10 +420,19 @@
       sessionId = data.session_id;
       localStorage.setItem("rag_session_id", sessionId);
       typing.remove();
-      addBubble("assistant", data.answer, data.contexts);
+      // thinking があればバーに表示してから少し後に消す
+      if (data.thinking) {
+        showThinkingBar(data.thinking);
+        addBubble("assistant", data.answer, data.contexts);
+        setTimeout(hideThinkingBar, 4000);
+      } else {
+        hideThinkingBar();
+        addBubble("assistant", data.answer, data.contexts);
+      }
       loadDocs();
     } catch (e) {
       typing.remove();
+      hideThinkingBar();
       addBubble("assistant", "エラーが発生しました。もう一度お試しください。");
     }
     sendBtn.disabled = false;
