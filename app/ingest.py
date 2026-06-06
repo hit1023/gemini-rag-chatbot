@@ -1,19 +1,22 @@
 import os
 import psycopg2
-import google.generativeai as genai
+from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+
+client = genai.Client(
+    api_key=os.environ["GEMINI_API_KEY"],
+    http_options={"api_version": "v1"},
+)
 
 
 def get_embedding(text: str) -> list[float]:
-    result = genai.embed_content(
-        model="models/text-embedding-004",
-        content=text,
-        task_type="retrieval_document",
+    result = client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 def ingest(texts: list[str]):
@@ -25,7 +28,7 @@ def ingest(texts: list[str]):
             "INSERT INTO documents (content, embedding) VALUES (%s, %s)",
             (text, embedding),
         )
-        print(f"登録: {text[:40]}...")
+        print(f"登録: {text[:40]}")
     conn.commit()
     cur.close()
     conn.close()
@@ -33,11 +36,9 @@ def ingest(texts: list[str]):
 
 if __name__ == "__main__":
     sample_docs = [
-        "Pythonはシンプルで読みやすいプログラミング言語です。",
-        "Dockerはコンテナベースのアプリケーションデプロイツールです。",
-        "PostgreSQLはオープンソースのリレーショナルデータベースです。",
-        "RAGとはRetrieval-Augmented Generationの略で、検索と生成を組み合わせた手法です。",
-        "pgvectorはPostgreSQLでベクトル検索を実現する拡張機能です。",
+        "ユーザーの名前はkuroです。",
+        "ユーザーは55歳です。",
+        "ユーザーは現在転職活動中です。転職候補先はAA株式会社とBB株式会社です。",
     ]
     ingest(sample_docs)
     print("登録完了")

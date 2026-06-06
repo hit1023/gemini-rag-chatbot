@@ -2,6 +2,11 @@ fastapi
 uvicorn
 psycopg2-binary
 pgvector
-google-generativeai
+google-genai
 python-dotenv
 numpy
+pypdf
+python-multipart
+python-jose[cryptography]
+passlib==1.7.4
+bcrypt==4.0.1
