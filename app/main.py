@@ -281,6 +281,63 @@ def delete_document_by_filename(filename: str, user=Depends(get_current_user)):
     return {"message": f"{deleted}チャンクを削除しました"}
 
 
+@app.get("/user-profile")
+def generate_user_profile(user=Depends(get_current_user)):
+    """会話履歴を分析してユーザープロファイルを生成する"""
+    user_id = user["id"]
+    conn = get_db()
+    cur = conn.cursor()
+    # 全会話履歴を取得（最大200件）
+    cur.execute(
+        "SELECT role, content FROM conversations WHERE user_id = %s ORDER BY created_at DESC LIMIT 200",
+        (user_id,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        return {"profile": "まだ会話履歴がありません。チャットしてから再度お試しください。"}
+
+    history_text = "\n".join(
+        f"{'ユーザー' if r[0] == 'user' else 'AI'}: {r[1]}"
+        for r in reversed(rows)
+    )
+
+    prompt = f"""以下はユーザーとAIの会話履歴です。この会話を分析して、ユーザーの人物像をまとめてください。
+
+会話履歴:
+{history_text}
+
+以下の形式で日本語でまとめてください。箇条書きで簡潔に記述してください：
+
+## 長所
+（会話から読み取れるユーザーの良い点・強み）
+
+## 短所・課題
+（会話から読み取れる改善点や苦手な傾向）
+
+## 接し方・コミュニケーションのコツ
+（このユーザーと上手く接するためのポイント）
+
+※会話履歴から読み取れる範囲でのみ記述し、推測が強い場合はその旨を記述してください。"""
+
+    try:
+        response = chat_client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=prompt,
+        )
+        profile = response.text
+    except Exception as e:
+        err = str(e)
+        if "429" in err:
+            profile = "レート制限中です。少し待ってから再試行してください。"
+        else:
+            profile = f"プロファイル生成に失敗しました: {err}"
+
+    return {"profile": profile}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

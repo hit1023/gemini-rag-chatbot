@@ -252,6 +252,15 @@
     </div>
 
     <div>
+      <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>🧠 ユーザープロンプト</span>
+        <button class="prompt-save-btn" id="profile-gen-btn" style="width:auto;padding:4px 10px;margin:0;font-size:11px;">✨ 生成</button>
+      </div>
+      <div id="profile-status" style="font-size:11px;color:var(--text-muted);min-height:16px;margin-bottom:4px;"></div>
+      <textarea class="prompt-textarea" id="profile-textarea" placeholder="「✨ 生成」ボタンで会話履歴からあなたの分析を生成します" style="min-height:160px;font-size:12px;"></textarea>
+    </div>
+
+    <div>
       <div class="section-title">📋 登録済みドキュメント</div>
       <div id="docs-list" style="display:flex;flex-direction:column;gap:6px;"></div>
       <div id="docs-empty" style="font-size:12px;color:var(--text-muted);display:none;">ドキュメントなし</div>
@@ -424,7 +433,7 @@
       if (data.thinking) {
         showThinkingBar(data.thinking);
         addBubble("assistant", data.answer, data.contexts);
-        setTimeout(hideThinkingBar, 4000);
+        setTimeout(hideThinkingBar, 30000);
       } else {
         hideThinkingBar();
         addBubble("assistant", data.answer, data.contexts);
@@ -487,6 +496,30 @@
     const btn = document.getElementById("prompt-save-btn");
     btn.textContent = "✅ 保存しました！";
     setTimeout(() => btn.textContent = "✅ プロンプトを保存", 2000);
+  });
+
+  // ===== ユーザープロンプト生成 =====
+  document.getElementById("profile-gen-btn").addEventListener("click", async () => {
+    const btn = document.getElementById("profile-gen-btn");
+    const status = document.getElementById("profile-status");
+    const textarea = document.getElementById("profile-textarea");
+    btn.disabled = true;
+    btn.textContent = "⏳ 生成中...";
+    status.textContent = "会話履歴を分析しています...";
+    status.style.color = "var(--text-muted)";
+    try {
+      const res = await fetch("/api/user-profile", { headers: authHeaders() });
+      const data = await res.json();
+      textarea.value = data.profile;
+      status.textContent = "✅ 生成完了";
+      status.style.color = "var(--success)";
+      setTimeout(() => status.textContent = "", 3000);
+    } catch (e) {
+      status.textContent = "❌ 生成失敗";
+      status.style.color = "var(--error)";
+    }
+    btn.disabled = false;
+    btn.textContent = "✨ 生成";
   });
 
   // ===== ドキュメント一覧 =====
