@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+psycopg2-binary
+pgvector
+google-generativeai
+python-dotenv
+numpy
