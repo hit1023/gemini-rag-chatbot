@@ -301,6 +301,32 @@
     document.getElementById("app").classList.add("visible");
     document.getElementById("username-display").textContent = username;
     loadDocs();
+    loadSettings();
+  }
+
+  async function loadSettings() {
+    try {
+      const res = await fetch("/api/settings", { headers: authHeaders() });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.system_prompt) {
+        document.getElementById("prompt-textarea").value = data.system_prompt;
+        systemPrompt = data.system_prompt;
+      }
+      if (data.user_profile) {
+        document.getElementById("profile-textarea").value = data.user_profile;
+      }
+    } catch (e) { /* 無視 */ }
+  }
+
+  async function saveSettings() {
+    const sp = document.getElementById("prompt-textarea").value;
+    const up = document.getElementById("profile-textarea").value;
+    await fetch("/api/settings", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify({ system_prompt: sp, user_profile: up }),
+    });
   }
 
   function authHeaders() {
@@ -491,10 +517,13 @@
   }
 
   // ===== プロンプト =====
-  document.getElementById("prompt-save-btn").addEventListener("click", () => {
+  document.getElementById("prompt-save-btn").addEventListener("click", async () => {
     systemPrompt = document.getElementById("prompt-textarea").value;
     const btn = document.getElementById("prompt-save-btn");
+    btn.disabled = true;
+    await saveSettings();
     btn.textContent = "✅ 保存しました！";
+    btn.disabled = false;
     setTimeout(() => btn.textContent = "✅ プロンプトを保存", 2000);
   });
 
@@ -511,7 +540,8 @@
       const res = await fetch("/api/user-profile", { headers: authHeaders() });
       const data = await res.json();
       textarea.value = data.profile;
-      status.textContent = "✅ 生成完了";
+      await saveSettings();
+      status.textContent = "✅ 生成・保存完了";
       status.style.color = "var(--success)";
       setTimeout(() => status.textContent = "", 3000);
     } catch (e) {

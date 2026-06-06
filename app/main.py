@@ -281,6 +281,42 @@ def delete_document_by_filename(filename: str, user=Depends(get_current_user)):
     return {"message": f"{deleted}チャンクを削除しました"}
 
 
+@app.get("/settings")
+def get_settings(user=Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT system_prompt, user_profile FROM user_settings WHERE user_id = %s", (user["id"],))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row:
+        return {"system_prompt": row[0], "user_profile": row[1]}
+    return {"system_prompt": DEFAULT_PROMPT, "user_profile": ""}
+
+
+class SettingsRequest(BaseModel):
+    system_prompt: str = ""
+    user_profile: str = ""
+
+
+@app.put("/settings")
+def save_settings(req: SettingsRequest, user=Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO user_settings (user_id, system_prompt, user_profile, updated_at)
+        VALUES (%s, %s, %s, NOW())
+        ON CONFLICT (user_id) DO UPDATE
+        SET system_prompt = EXCLUDED.system_prompt,
+            user_profile = EXCLUDED.user_profile,
+            updated_at = NOW()
+    """, (user["id"], req.system_prompt, req.user_profile))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "保存しました"}
+
+
 @app.get("/user-profile")
 def generate_user_profile(user=Depends(get_current_user)):
     """会話履歴を分析してユーザープロファイルを生成する"""
