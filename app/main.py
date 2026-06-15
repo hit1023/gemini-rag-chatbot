@@ -54,13 +54,19 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer)
         raise HTTPException(status_code=401, detail="トークンが無効です")
 
 
+REGISTER_CODE = os.environ.get("REGISTER_CODE", "")
+
+
 class AuthRequest(BaseModel):
     username: str
     password: str
+    invite_code: str = ""
 
 
 @app.post("/auth/register")
 def register(req: AuthRequest):
+    if REGISTER_CODE and req.invite_code != REGISTER_CODE:
+        raise HTTPException(status_code=403, detail="招待コードが正しくありません")
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT id FROM users WHERE username = %s", (req.username,))

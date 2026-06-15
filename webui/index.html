@@ -215,6 +215,10 @@
       <label>パスワード</label>
       <input type="password" id="login-password" placeholder="password" autocomplete="current-password">
     </div>
+    <div class="login-field" id="invite-field" style="display:none;">
+      <label>招待コード</label>
+      <input type="text" id="login-invite" placeholder="招待コードを入力">
+    </div>
     <button class="login-btn" id="login-btn">ログイン</button>
     <div class="login-error" id="login-error"></div>
   </div>
@@ -341,12 +345,14 @@
     document.getElementById("tab-login").classList.add("active");
     document.getElementById("tab-register").classList.remove("active");
     document.getElementById("login-btn").textContent = "ログイン";
+    document.getElementById("invite-field").style.display = "none";
   });
   document.getElementById("tab-register").addEventListener("click", () => {
     isRegisterMode = true;
     document.getElementById("tab-register").classList.add("active");
     document.getElementById("tab-login").classList.remove("active");
     document.getElementById("login-btn").textContent = "アカウント作成";
+    document.getElementById("invite-field").style.display = "block";
   });
 
   document.getElementById("login-btn").addEventListener("click", async () => {
@@ -357,10 +363,13 @@
     if (!u || !p) { errEl.textContent = "ユーザー名とパスワードを入力してください"; return; }
 
     const endpoint = isRegisterMode ? "/api/auth/register" : "/api/auth/login";
+    const body = isRegisterMode
+      ? { username: u, password: p, invite_code: document.getElementById("login-invite").value }
+      : { username: u, password: p };
     try {
       const res = await fetch(endpoint, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: u, password: p }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) { errEl.textContent = data.detail || "エラーが発生しました"; return; }
