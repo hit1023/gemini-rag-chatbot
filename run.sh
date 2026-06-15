@@ -1,44 +1,13 @@
 #!/bin/bash
-set -e
 
-COMPOSE="docker compose"
-ENV_FILE=".env"
-
-# カラー定義
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m'
-
-info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
-error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
-
-show_help() {
-  echo "使い方: ./run.sh [コマンド]"
-  echo ""
-  echo "コマンド:"
-  echo "  up       コンテナを起動（デフォルト）"
-  echo "  down     コンテナを停止"
-  echo "  restart  コンテナを再起動"
-  echo "  logs     ログをリアルタイム表示"
-  echo "  status   コンテナの状態確認"
-  echo "  build    イメージを再ビルドして起動"
-  echo "  reset    データを含めて完全リセット（⚠️ DB削除）"
-  echo "  help     このヘルプを表示"
-}
-
-check_env() {
-  if [ ! -f "$ENV_FILE" ]; then
-    warn ".env ファイルが見つかりません。作成します。"
-    read -rp "GEMINI_API_KEY を入力してください: " api_key
-    echo "GEMINI_API_KEY=${api_key}" > "$ENV_FILE"
-    info ".env を作成しました。"
-  fi
-  if ! grep -q "GEMINI_API_KEY" "$ENV_FILE" || grep -q "GEMINI_API_KEY=$" "$ENV_FILE"; then
-    error "GEMINI_API_KEY が .env に設定されていません。"
-  fi
-}
+GRAY='\033[0;90m'
+BOLD='\033[1m'
+RESET='\033[0m'
 
 get_local_ip() {
   ip a 2>/dev/null | grep -oP '(?<=inet )192\.\d+\.\d+\.\d+' | head -1 \
@@ -46,77 +15,131 @@ get_local_ip() {
     || echo "localhost"
 }
 
-cmd_up() {
-  check_env
-  info "コンテナを起動します..."
-  $COMPOSE up -d
-  info "起動完了！"
-  local ip
-  ip=$(get_local_ip)
-  echo ""
-  echo -e "  アクセスURL: ${GREEN}http://${ip}:8031${NC}"
-  echo ""
-}
-
-cmd_down() {
-  info "コンテナを停止します..."
-  $COMPOSE down
-  info "停止しました。"
-}
-
-cmd_restart() {
-  check_env
-  info "コンテナを再起動します..."
-  $COMPOSE restart
-  info "再起動しました。"
-}
-
-cmd_logs() {
-  info "ログを表示します（Ctrl+C で終了）"
-  $COMPOSE logs -f
-}
-
-cmd_status() {
-  $COMPOSE ps
-}
-
-cmd_build() {
-  check_env
-  info "イメージを再ビルドして起動します..."
-  $COMPOSE build --no-cache api
-  $COMPOSE up -d
-  local ip
-  ip=$(get_local_ip)
-  info "起動完了！"
-  echo ""
-  echo -e "  アクセスURL: ${GREEN}http://${ip}:8031${NC}"
-  echo ""
-}
-
-cmd_reset() {
-  echo -e "${RED}⚠️  警告: DBのデータ（会話履歴・ドキュメント・アカウント）がすべて削除されます！${NC}"
-  read -rp "本当に実行しますか？ (yes と入力して確認): " confirm
-  if [ "$confirm" != "yes" ]; then
-    info "キャンセルしました。"
-    exit 0
+check_env() {
+  if [ ! -f ".env" ]; then
+    echo -e "\n${YELLOW}⚠  .env が見つかりません。作成します。${RESET}"
+    read -rp "  GEMINI_API_KEY を入力してください: " api_key
+    echo "GEMINI_API_KEY=${api_key}" > .env
+    echo -e "${GREEN}✓ .env を作成しました${RESET}"
   fi
-  info "コンテナとボリュームを削除します..."
-  $COMPOSE down -v
-  check_env
-  info "再起動します..."
-  $COMPOSE up -d
-  info "リセット完了！"
+  if grep -q "GEMINI_API_KEY=$" .env 2>/dev/null; then
+    echo -e "${RED}✗ GEMINI_API_KEY が未設定です。.env を確認してください。${RESET}"
+    sleep 2
+    return 1
+  fi
 }
 
-# メイン処理
-case "${1:-up}" in
-  up)      cmd_up ;;
-  down)    cmd_down ;;
-  restart) cmd_restart ;;
-  logs)    cmd_logs ;;
-  status)  cmd_status ;;
-  build)   cmd_build ;;
-  reset)   cmd_reset ;;
-  help|--help|-h) show_help ;;
-  *) error "不明なコマンド: $1  ( ./run.sh help で確認 )" ;;
-esac
+show_url() {
+  local ip
+  ip=$(get_local_ip)
+  echo -e "  ${GRAY}アクセスURL:${RESET} ${CYAN}http://${ip}:8031${RESET}"
+}
+
+show_menu() {
+  clear
+  echo -e "${CYAN}${BOLD}"
+  echo "  ╔════════════════════════════════════════╗"
+  echo "  ║     Gemini RAG Chatbot  管理メニュー  ║"
+  echo "  ╚════════════════════════════════════════╝"
+  echo -e "${RESET}"
+  echo -e "  ${BOLD}1.${RESET}  ${GREEN}更新 & 起動${RESET}       ${GRAY}(pull → down → build → up)${RESET}"
+  echo -e "  ${BOLD}2.${RESET}  ${GREEN}ビルド & 起動${RESET}     ${GRAY}(down → build → up)${RESET}"
+  echo -e "  ${BOLD}3.${RESET}  ${GREEN}起動${RESET}              ${GRAY}(up -d)${RESET}"
+  echo -e "  ${BOLD}4.${RESET}  ${YELLOW}再起動${RESET}            ${GRAY}(restart)${RESET}"
+  echo -e "  ${BOLD}5.${RESET}  ${RED}停止${RESET}              ${GRAY}(down)${RESET}"
+  echo -e "  ${BOLD}6.${RESET}  ${BLUE}ログを見る${RESET}        ${GRAY}(logs -f)${RESET}"
+  echo -e "  ${BOLD}7.${RESET}  ${BLUE}状態を確認${RESET}        ${GRAY}(ps)${RESET}"
+  echo -e "  ${BOLD}8.${RESET}  ${RED}完全リセット${RESET}      ${GRAY}(down -v → up) ⚠️  DB削除${RESET}"
+  echo -e "  ${BOLD}0.${RESET}  終了"
+  echo ""
+  echo -ne "  番号を選択 → "
+}
+
+while true; do
+  show_menu
+  read -r choice
+
+  case $choice in
+    1)
+      echo -e "\n${GREEN}▶ 更新 & 起動${RESET}"
+      git pull
+      check_env || { read -r; continue; }
+      docker compose down
+      docker compose up -d --build
+      echo -e "${GREEN}✓ 完了${RESET}"
+      show_url
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    2)
+      echo -e "\n${GREEN}▶ ビルド & 起動${RESET}"
+      check_env || { read -r; continue; }
+      docker compose down
+      docker compose up -d --build
+      echo -e "${GREEN}✓ 完了${RESET}"
+      show_url
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    3)
+      echo -e "\n${GREEN}▶ 起動${RESET}"
+      check_env || { read -r; continue; }
+      docker compose up -d
+      echo -e "${GREEN}✓ 完了${RESET}"
+      show_url
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    4)
+      echo -e "\n${YELLOW}▶ 再起動${RESET}"
+      docker compose restart
+      echo -e "${GREEN}✓ 完了${RESET}"
+      show_url
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    5)
+      echo -e "\n${RED}▶ 停止${RESET}"
+      docker compose down
+      echo -e "${GREEN}✓ 停止しました${RESET}"
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    6)
+      echo -e "\n${BLUE}▶ ログ表示 ${GRAY}(Ctrl+C で戻る)${RESET}\n"
+      docker compose logs -f
+      ;;
+    7)
+      echo -e "\n${BLUE}▶ 状態確認${RESET}\n"
+      docker compose ps
+      echo ""
+      show_url
+      echo -e "\n${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    8)
+      echo -e "\n${RED}⚠️  警告: DB のデータ（会話履歴・ドキュメント・アカウント）が全て削除されます！${RESET}"
+      echo -ne "  本当に実行しますか？ (yes と入力して確認): "
+      read -r confirm
+      if [ "$confirm" = "yes" ]; then
+        docker compose down -v
+        check_env || { read -r; continue; }
+        docker compose up -d
+        echo -e "${GREEN}✓ リセット完了${RESET}"
+        show_url
+      else
+        echo -e "${GRAY}キャンセルしました${RESET}"
+      fi
+      echo -e "${GRAY}Enterで戻る...${RESET}"
+      read -r
+      ;;
+    0)
+      echo -e "\n${GRAY}終了します${RESET}\n"
+      exit 0
+      ;;
+    *)
+      echo -e "\n${RED}無効な番号です${RESET}"
+      sleep 1
+      ;;
+  esac
+done
