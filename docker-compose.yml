@@ -21,6 +21,8 @@ services:
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       POSTGRES_DSN: postgresql://raguser:ragpass@postgres:5432/ragdb
+      REGISTER_CODE: ${REGISTER_CODE}
+      SECRET_KEY: ${SECRET_KEY}
     ports:
       - "8030:8000"
     depends_on:
