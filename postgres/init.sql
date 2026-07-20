@@ -24,6 +24,13 @@ CREATE TABLE conversations (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+CREATE TABLE chat_sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    title TEXT,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 CREATE TABLE user_settings (
     user_id INTEGER PRIMARY KEY REFERENCES users(id),
     system_prompt TEXT NOT NULL DEFAULT '',

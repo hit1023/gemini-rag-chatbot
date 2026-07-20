@@ -273,6 +273,12 @@
     </div>
 
     <div>
+      <div class="section-title">🕘 会話履歴</div>
+      <div id="history-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      <div id="history-empty" style="font-size:12px;color:var(--text-muted);display:none;">まだ会話履歴がありません</div>
+    </div>
+
+    <div>
       <div class="section-title">📋 登録済みドキュメント</div>
       <div id="docs-list" style="display:flex;flex-direction:column;gap:6px;"></div>
       <div id="docs-empty" style="font-size:12px;color:var(--text-muted);display:none;">ドキュメントなし</div>
@@ -314,6 +320,7 @@
     document.getElementById("username-display").textContent = username;
     loadDocs();
     loadSettings();
+    loadHistory();
   }
 
   async function loadSettings() {
@@ -482,6 +489,7 @@
         addBubble("assistant", data.answer, data.contexts);
       }
       loadDocs();
+      loadHistory();
     } catch (e) {
       typing.remove();
       hideThinkingBar();
@@ -624,6 +632,38 @@
     await fetch("/api/documents", { method: "DELETE", headers: authHeaders() });
     loadDocs();
   });
+
+  // ===== 会話履歴 =====
+  async function loadHistory() {
+    const res = await fetch("/api/sessions", { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = document.getElementById("history-list");
+    const empty = document.getElementById("history-empty");
+    list.innerHTML = "";
+    if (!data.sessions || data.sessions.length === 0) { empty.style.display = "block"; return; }
+    empty.style.display = "none";
+    data.sessions.forEach(s => {
+      const item = document.createElement("div");
+      item.className = "doc-item";
+      item.style.cursor = "pointer";
+      if (s.session_id === sessionId) item.style.borderColor = "var(--accent)";
+      item.innerHTML = `<span class="doc-item-name" title="${s.title}">${s.title}</span>`;
+      item.addEventListener("click", () => loadSessionMessages(s.session_id));
+      list.appendChild(item);
+    });
+  }
+
+  async function loadSessionMessages(sid) {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/messages`, { headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    sessionId = sid;
+    localStorage.setItem("rag_session_id", sessionId);
+    chatWindow.innerHTML = "";
+    data.messages.forEach(m => addBubble(m.role === "user" ? "user" : "assistant", m.content));
+    loadHistory();
+  }
 </script>
 </body>
 </html>

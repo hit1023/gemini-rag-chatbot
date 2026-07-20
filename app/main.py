@@ -217,8 +217,78 @@ def chat(req: ChatRequest, user=Depends(get_current_user)):
 
     save_message(session_id, user_id, "user", req.message)
     save_message(session_id, user_id, "assistant", answer)
+    ensure_chat_session(session_id, user_id, req.message)
 
     return {"answer": answer, "thinking": thinking, "contexts": contexts, "session_id": session_id}
+
+
+# ===== 会話履歴（セッション一覧） =====
+
+def generate_session_title(user_message: str) -> str:
+    try:
+        prompt = (
+            "次のユーザー発言の内容を表す、10〜15文字程度の短い日本語タイトルを1つだけ出力してください。"
+            "タイトル以外の説明・記号・引用符は出力しないでください。\n\n"
+            f"発言: {user_message[:500]}"
+        )
+        response = chat_client.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
+        title = (response.text or "").strip().splitlines()[0].strip()
+        return title[:30] if title else user_message[:20]
+    except Exception:
+        return user_message[:20]
+
+
+def ensure_chat_session(session_id: str, user_id: int, first_message: str):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (session_id,))
+    if cur.fetchone():
+        cur.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE session_id = %s", (session_id,))
+    else:
+        # chat_sessions未登録のまま既存の会話履歴がある場合（本機能導入前のセッション）は、
+        # 本当の最初の発言をタイトル生成に使う
+        cur.execute(
+            "SELECT content FROM conversations WHERE session_id = %s AND role = 'user' ORDER BY created_at ASC LIMIT 1",
+            (session_id,),
+        )
+        row = cur.fetchone()
+        basis = row[0] if row else first_message
+        title = generate_session_title(basis)
+        cur.execute(
+            "INSERT INTO chat_sessions (session_id, user_id, title, updated_at) VALUES (%s, %s, %s, NOW())",
+            (session_id, user_id, title),
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+@app.get("/sessions")
+def list_sessions(user=Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT session_id, title, updated_at FROM chat_sessions WHERE user_id = %s ORDER BY updated_at DESC LIMIT 20",
+        (user["id"],),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {"sessions": [{"session_id": r[0], "title": r[1], "updated_at": r[2].isoformat()} for r in rows]}
+
+
+@app.get("/sessions/{session_id}/messages")
+def get_session_messages(session_id: str, user=Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT role, content FROM conversations WHERE session_id = %s AND user_id = %s ORDER BY created_at ASC",
+        (session_id, user["id"]),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return {"messages": [{"role": r[0], "content": r[1]} for r in rows]}
 
 
 # ===== ファイルアップロード =====
