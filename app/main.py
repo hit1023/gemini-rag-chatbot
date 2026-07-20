@@ -3,6 +3,7 @@ import json
 import uuid
 import psycopg2
 import requests
+from urllib.parse import urlparse, urljoin
 from google import genai
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -250,45 +251,128 @@ async def upload(file: UploadFile = File(...), user=Depends(get_current_user)):
 
 # ===== URL取り込み =====
 
-def fetch_url_text(url: str) -> str:
+MAX_CRAWL_PAGES = 5  # クロール時の最大取得ページ数
+MAX_PAGE_CHARS = 20000  # 1ページあたりの最大文字数（巨大ページによるコスト暴走を防止。超過分は切り捨て）
+MAX_TOTAL_CHUNKS = 100  # 1回のURL取り込みリクエストで埋め込みAPIを呼ぶ最大チャンク数（コストの絶対上限）
+
+
+def fetch_page_content(url: str) -> tuple[str, str]:
+    """(抽出テキスト, 生HTML) を返す。PDFの場合はリンクを持たないため生HTMLは空文字。
+    テキストは MAX_PAGE_CHARS で切り詰める（巨大ページによる埋め込みAPIコスト暴走を防ぐため）。"""
     resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     content_type = resp.headers.get("content-type", "")
     if "application/pdf" in content_type or url.lower().endswith(".pdf"):
         reader = PdfReader(io.BytesIO(resp.content))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
-    soup = BeautifulSoup(resp.text, "html.parser")
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        return text[:MAX_PAGE_CHARS], ""
+    html = resp.text
+    soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "nav", "header", "footer"]):
         tag.decompose()
-    return soup.get_text(separator="\n", strip=True)
+    text = soup.get_text(separator="\n", strip=True)
+    return text[:MAX_PAGE_CHARS], html
+
+
+def fetch_url_text(url: str) -> str:
+    text, _ = fetch_page_content(url)
+    return text
+
+
+def extract_same_domain_links(html: str, base_url: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    base_domain = urlparse(base_url).netloc
+    seen = set()
+    links = []
+    for a in soup.find_all("a", href=True):
+        link = urljoin(base_url, a["href"])
+        parsed = urlparse(link)
+        if parsed.scheme not in ("http", "https") or parsed.netloc != base_domain:
+            continue
+        clean = parsed._replace(fragment="").geturl()
+        if clean not in seen:
+            seen.add(clean)
+            links.append(clean)
+    return links
+
+
+def crawl_urls(start_url: str, max_pages: int = MAX_CRAWL_PAGES) -> list[tuple[str, str]]:
+    """開始URLと、そこから同一ドメインへ張られたリンク（深さ1）を最大max_pagesページ取得する"""
+    results = []
+    visited = {start_url}
+
+    text, html = fetch_page_content(start_url)
+    if text.strip():
+        results.append((start_url, text))
+
+    if html and len(results) < max_pages:
+        for link in extract_same_domain_links(html, start_url):
+            if len(results) >= max_pages:
+                break
+            if link in visited:
+                continue
+            visited.add(link)
+            try:
+                page_text, _ = fetch_page_content(link)
+                if page_text.strip():
+                    results.append((link, page_text))
+            except Exception:
+                continue  # 個別ページの取得失敗はスキップして続行
+
+    return results
 
 
 class UrlIngestRequest(BaseModel):
     url: str
+    crawl: bool = False
 
 
 @app.post("/upload-url")
 def upload_url(req: UrlIngestRequest, user=Depends(get_current_user)):
     try:
-        text = fetch_url_text(req.url)
+        if req.crawl:
+            pages = crawl_urls(req.url)
+        else:
+            pages = [(req.url, fetch_url_text(req.url))]
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"URLの取得に失敗しました: {e}")
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="URLからテキストを抽出できませんでした")
-    chunks = chunk_text(text)
+
     conn = get_db()
     cur = conn.cursor()
-    metadata = json.dumps({"filename": req.url, "source_url": req.url})
-    for chunk in chunks:
-        emb = get_embedding(chunk)
-        cur.execute(
-            "INSERT INTO documents (content, embedding, metadata, user_id) VALUES (%s, %s, %s, %s)",
-            (chunk, emb, metadata, user["id"]),
-        )
+    total_chunks = 0
+    truncated = False
+    for page_url, text in pages:
+        if not text.strip():
+            continue
+        metadata = json.dumps({"filename": page_url, "source_url": page_url})
+        for chunk in chunk_text(text):
+            if total_chunks >= MAX_TOTAL_CHUNKS:
+                truncated = True
+                break
+            emb = get_embedding(chunk)
+            cur.execute(
+                "INSERT INTO documents (content, embedding, metadata, user_id) VALUES (%s, %s, %s, %s)",
+                (chunk, emb, metadata, user["id"]),
+            )
+            total_chunks += 1
+        if truncated:
+            break
     conn.commit()
     cur.close()
     conn.close()
-    return {"message": f"{len(chunks)} チャンクを登録しました", "url": req.url}
+
+    if total_chunks == 0:
+        raise HTTPException(status_code=400, detail="URLからテキストを抽出できませんでした")
+
+    message = f"{len(pages)}ページ・{total_chunks}チャンクを登録しました"
+    if truncated:
+        message += f"（上限{MAX_TOTAL_CHUNKS}チャンクに達したため一部は取り込んでいません）"
+
+    return {
+        "message": message,
+        "url": req.url,
+        "pages_fetched": len(pages),
+    }
 
 
 # ===== ドキュメント管理 =====
