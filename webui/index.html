@@ -243,6 +243,10 @@
         <div class="formats">PDF / TXT 対応</div>
         <input type="file" id="file-input" accept=".pdf,.txt">
       </div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        <input type="text" id="url-input" placeholder="https://example.com/article" style="flex:1; padding:8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 12px; outline: none;">
+        <button class="prompt-save-btn" id="url-submit-btn" style="width:auto; margin:0; padding:8px 12px;">🔗 追加</button>
+      </div>
       <div class="upload-status" id="upload-status"></div>
     </div>
 
@@ -522,6 +526,32 @@
     } catch (e) {
       uploadStatus.className = "upload-status error";
       uploadStatus.textContent = `❌ アップロード失敗`;
+    }
+  }
+
+  const urlInput = document.getElementById("url-input");
+  const urlSubmitBtn = document.getElementById("url-submit-btn");
+  urlSubmitBtn.addEventListener("click", () => { if (urlInput.value.trim()) uploadUrl(urlInput.value.trim()); });
+  urlInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && urlInput.value.trim()) uploadUrl(urlInput.value.trim()); });
+
+  async function uploadUrl(url) {
+    uploadStatus.className = "upload-status";
+    uploadStatus.textContent = `⏳ 取得中: ${url}`;
+    try {
+      const res = await fetch("/api/upload-url", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      uploadStatus.className = "upload-status success";
+      uploadStatus.textContent = `✅ ${data.message}`;
+      urlInput.value = "";
+      loadDocs();
+    } catch (e) {
+      uploadStatus.className = "upload-status error";
+      uploadStatus.textContent = `❌ URL取り込み失敗`;
     }
   }
 

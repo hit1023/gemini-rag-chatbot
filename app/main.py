@@ -1,12 +1,15 @@
 import os
+import json
 import uuid
 import psycopg2
+import requests
 from google import genai
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from pypdf import PdfReader
+from bs4 import BeautifulSoup
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 import io
@@ -243,6 +246,49 @@ async def upload(file: UploadFile = File(...), user=Depends(get_current_user)):
     cur.close()
     conn.close()
     return {"message": f"{len(chunks)} チャンクを登録しました", "filename": filename}
+
+
+# ===== URL取り込み =====
+
+def fetch_url_text(url: str) -> str:
+    resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    content_type = resp.headers.get("content-type", "")
+    if "application/pdf" in content_type or url.lower().endswith(".pdf"):
+        reader = PdfReader(io.BytesIO(resp.content))
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tag in soup(["script", "style", "nav", "header", "footer"]):
+        tag.decompose()
+    return soup.get_text(separator="\n", strip=True)
+
+
+class UrlIngestRequest(BaseModel):
+    url: str
+
+
+@app.post("/upload-url")
+def upload_url(req: UrlIngestRequest, user=Depends(get_current_user)):
+    try:
+        text = fetch_url_text(req.url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"URLの取得に失敗しました: {e}")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="URLからテキストを抽出できませんでした")
+    chunks = chunk_text(text)
+    conn = get_db()
+    cur = conn.cursor()
+    metadata = json.dumps({"filename": req.url, "source_url": req.url})
+    for chunk in chunks:
+        emb = get_embedding(chunk)
+        cur.execute(
+            "INSERT INTO documents (content, embedding, metadata, user_id) VALUES (%s, %s, %s, %s)",
+            (chunk, emb, metadata, user["id"]),
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": f"{len(chunks)} チャンクを登録しました", "url": req.url}
 
 
 # ===== ドキュメント管理 =====
