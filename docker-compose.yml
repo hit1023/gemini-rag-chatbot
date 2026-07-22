@@ -1,6 +1,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: raguser
       POSTGRES_PASSWORD: ragpass
@@ -18,6 +19,7 @@ services:
 
   api:
     build: ./app
+    restart: unless-stopped
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       POSTGRES_DSN: postgresql://raguser:ragpass@postgres:5432/ragdb
@@ -33,6 +35,7 @@ services:
 
   webui:
     image: nginx:alpine
+    restart: unless-stopped
     ports:
       - "8031:80"
     volumes:
