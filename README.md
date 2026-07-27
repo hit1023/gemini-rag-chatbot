@@ -176,7 +176,7 @@ JWT トークンは `localStorage` に保存されます（30日間有効）。
 2. または、エリアをクリックしてファイルを選択
 3. 対応形式：**PDF**・**TXT**
 
-アップロードされたドキュメントはテキストを 300 文字ずつチャンクに分割し、Gemini Embedding でベクトル化して PostgreSQL に保存されます。
+アップロードされたドキュメントはテキストを 300 文字ごと（50 文字重複させながら）チャンクに分割し、Gemini Embedding でベクトル化して PostgreSQL に保存されます。
 
 ### URL からのナレッジ追加
 
@@ -300,6 +300,12 @@ docker compose down -v   # ボリュームごと削除（データ完全消去�
 
 ## 主なコマンド
 
+`run.sh` を実行すると、以下のコマンドを対話式メニューから選べます（機能は同じです）。
+
+```bash
+./run.sh
+```
+
 ```bash
 # 起動
 docker compose up -d
@@ -411,8 +417,11 @@ docker compose up -d --force-recreate webui
 ```
 gemini-rag-chatbot/
 ├── docker-compose.yml       # Docker Compose 定義
+├── run.sh                   # Docker Compose操作の対話式管理メニュー
 ├── .env                     # 環境変数（要作成・Git 管理外）
 ├── .env.example             # 環境変数サンプル
+├── images/
+│   └── ragchat.jpg          # README掲載のスクリーンショット
 ├── app/
 │   ├── Dockerfile           # FastAPI コンテナ定義
 │   ├── main.py              # FastAPI アプリ本体
@@ -421,8 +430,10 @@ gemini-rag-chatbot/
 ├── webui/
 │   ├── nginx.conf           # nginx 設定
 │   └── index.html           # フロントエンド SPA
-└── postgres/
-    └── init.sql             # DB 初期化 SQL
+├── postgres/
+│   └── init.sql             # DB 初期化 SQL
+├── k8s/                     # k3s移行検証時のマニフェスト（現在は未使用・参考保存）
+└── run-k3s.sh               # k3s版の管理メニュー（現在は未使用・参考保存）
 ```
 
 ---
