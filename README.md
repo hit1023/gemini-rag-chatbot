@@ -4,6 +4,8 @@ Google Gemini と PostgreSQL（pgvector）を使った RAG（検索拡張生成�
 PDF / TXT ファイルをアップロードしてナレッジベースを構築し、会話履歴を記憶しながら回答します。  
 マルチユーザー対応・ユーザーごとのデータ分離・Gemini Thinking（CoT）表示機能を備えています。
 
+![画面イメージ](images/ragchat.jpg)
+
 ---
 
 ## 機能一覧
